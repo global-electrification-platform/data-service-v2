@@ -7,6 +7,7 @@ import clickhouse_driver
 from pydantic import BaseModel
 from typing import List, Optional
 
+import json
 import os
 import expander
 
@@ -54,7 +55,7 @@ def _sum(f, as_name=None):
     return "sum(%s)" % f
 
 
-def model_fromScenario(sid)
+def model_fromScenario(sid):
     client = connection()
     sid = sid.lower()
     
@@ -144,8 +145,8 @@ def country(countryId: str):
 
 @app.get('/models/{modelId}')
 def model(modelId: str):
-   client = connection()
-   model = client.execute("""
+    client = connection()
+    model = client.execute("""
         select
           attribution,
           country,
@@ -181,8 +182,8 @@ def feature(sid: str, fid: int, year:int = None):
         if not year:
             year = timesteps[-1]
         if not year in timesteps:
-            raise CustomError("The parameter %(year)s is invalid for this scenario, Must be one of %(ts)s", %
-                              {'year':year, 'ts': timesteps.join ", "})
+            raise CustomError("The parameter %(year)s is invalid for this scenario, Must be one of %(ts)s" %
+                              {'year':year, 'ts': ", ".join(timesteps)})
 
     fields = [ yearFieldAs('InvestmentCost', year),
                yearFieldAs('NewCapacity', year),
@@ -202,7 +203,7 @@ def feature(sid: str, fid: int, year:int = None):
 def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
     client = connection()
     sid = sid.lower()
-    response = {'id': sid
+    response = {'id': sid,
                 'summaryByType': {}
                 }
     if filters:
@@ -223,11 +224,11 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
         if not year:
             year = timesteps[0]
         if not year in timesteps:
-            raise CustomError("The parameter %(year)s is invalid for this scenario, Must be one of %(ts)s", %
-                              {'year':year, 'ts': timesteps.join ", "})
+            raise CustomError("The parameter %(year)s is invalid for this scenario, Must be one of %(ts)s" %
+                              {'year':year, 'ts': ", ".join(timesteps)})
 
     includedSteps = [y for y in timesteps if y <=year]
-    investmentCostSelector = "+" .join([ "(%s * %s)" % (yearField("InvestmentCost",y)
+    investmentCostSelector = "+" .join([ "(%s * %s)" % (yearField("InvestmentCost",y),
                                                         yearField("ElecStatusIn", y))
                                          for y in includedSteps ])
 
@@ -236,7 +237,7 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
     wheres = ["scenarioId = %(scenaroiId)s"]
     vals = {'scenarioId': sid}
     for f in filters:
-        filterdef = model.['filters_dict'].get(f['key'], None)
+        filterdef = model['filters_dict'].get(f['key'], None)
         if filterdef.get('timestamp', None):
             key = yearField(key, year)
         if f.min is not None:
