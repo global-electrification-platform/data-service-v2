@@ -1,0 +1,22 @@
+.DS_Store
+.idea/
+Water Quantity-20200804T114107Z-001.zip
+Water Quantity/
+__pycache__
+
+cc
+ch
+clickhouse-import.zip
+clickhouse-import/
+csv/
+import_test.py
+queries/
+venv/
+volumes/
+run_server
+/docs/
+/to aws bs/
+cs-backup.tar.gz
+
+vpy
+*~
