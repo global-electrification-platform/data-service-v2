@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Body, Path, Query, Response
+from fastapi import FastAPI, Body, Path, Query, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
@@ -7,9 +7,11 @@ import clickhouse_driver
 from pydantic import BaseModel
 from typing import List, Optional
 
+import collections
 import json
+import time
 import os
-import expander
+from . import expander
 
 import logging
 log = logging.getLogger(__name__)
@@ -29,14 +31,20 @@ app.add_middleware(
     max_age=86400,
 )
 
+#
+# RISE
+#
 riseScores = {}
 
 with open(os.path.join(os.path.dirname(__file__), 'rise-indicators.json'), 'r') as f:
     rise = json.load(f)
     riseScores = {r['iso']:r for r in rise}
 
+#
+# utils
+#
 def scenarioId_toModelId(sid):
-    return sid.split('-')[-1]
+    return "-".join(sid.split('-')[0:2])
 
 def yearField(field, year):
     if year:
@@ -56,22 +64,66 @@ def _sum(f, as_name=None):
 
 
 def model_fromScenario(sid):
-    client = connection()
     sid = sid.lower()
-    
-    modelId = scenarioId_toModelId(sid)
-    
-    res = client.execute('select filters, timesteps, baseYear from models where id=%(modelId)s',
-                         {'modelId': modelId})
-    if not res:
-        raise CustomError('NotFound')
-    model = res[0]
-    model['filter_dict'] = {f['key']: f for f in model['filters']}
 
+    modelId = scenarioId_toModelId(sid)
+
+    model= unjson_model(_execute_onerow('select filters, timesteps, baseYear from models where id=%(modelId)s',
+                                        {'modelId': modelId}))
+
+    model['filter_dict'] = {f['key']: f for f in model['filters']}
+    return model
+
+def unjson_model(model):
+    # model was loaded directly from a postgresql dump
+    # json fields
+    for field in ('attribution', 'map', 'sourceData'):
+        if not field in model: continue
+        try:
+            model[field] = json.loads(model[field])
+        except json.JSONDecodeError as msg:
+            log.error(msg)
+            log.error(model[field])
+            raise
+    # json[] fields. These aren't actually valid json
+    # I'd worry about performance here, but it's just models
+    # and we do this max once per request
+    for field in('levers', 'filters', 'timesteps'):
+        if not field in model: continue
+        try:
+            arr = json.loads('[' + model[field][1:-1] + ']')
+            model[field] = [json.loads(elt) for elt in arr if isinstance(elt, str)]
+            if not model[field]:
+                model[field] = arr
+        except Exception as msg:
+            log.error(msg)
+            log.error(model[field])
+            raise
+    return model
+
+#
+# Query bits
+#
 def connection():
     # clickhouse driver client
     client = clickhouse_driver.Client(host=CLICKHOUSE_HOST, database=CLICKHOUSE_DB)
     return client
+
+#
+# query executors that return a dict or list of dicts
+#
+def _execute(sql, params=None):
+    client = connection()
+    (results, cols) = client.execute(sql, params, with_column_types=True)
+    log.error(cols)
+    for res in results:
+        yield {col[0]:v for col, v in zip(cols,res)}
+
+def _execute_onerow(sql, params=None):
+    try:
+        return next(_execute(sql, params))
+    except StopIteration:
+        raise CustomError("Not Found")
 
 class CustomError(Exception):
     pass
@@ -92,12 +144,12 @@ def read_root():
 @app.get('/stats')
 def stats():
     client = connection()
-    countries = client.execute("select count(distinct country) from models")
-    models = client.execute("select count(distinct type) from models")
+    countries = _execute_onerow("select count(distinct country) as countries from models")
+    models = _execute_onerow("select count(distinct type) as models from models")
     return {
         "totals": {
-        "countries": countries,
-        "models": models,
+        "countries": countries['countries'],
+        "models": models['models'],
         }
     }
 
@@ -105,20 +157,20 @@ def stats():
 @app.get("/countries")
 def countries():
     client = connection()
-    countries = client.execute("""
+    countries = _execute("""
         select id, name from countries
         where id in (select country from models)
         order by name ASC
         """)
 
-    return { countries }
+    return { 'countries': countries }
 
 @app.get("/countries/{countryId}")
 def country(countryId: str):
     client = connection()
     countryId = countryId.upper()
-    country = client.execute("select * from countries where id=%(countryId)s", {"countryId":countryId})
-    country.models = client.execute("""
+    country = _execute_onerow("select * from countries where id=%(countryId)s", {"countryId":countryId})
+    country['models'] = [unjson_model(m) for m in _execute("""
         select
           attribution,
           country,
@@ -134,19 +186,20 @@ def country(countryId: str):
           version,
           type,
           sourceData,
-          date_trunc(updatedAt, 'day') as updatedAt,
+          date_trunc('day', updatedAt) as updatedAt
+          from gep.models
           where country=%(countryId)s
           order by updatedAt desc
           """,
-                            {"countryId":countryId})
+                            {"countryId":countryId})]
 
-    country.riseScores = riseScores.get(countryId, None)
+    country['riseScores'] = riseScores.get(countryId, None)
     return country
 
 @app.get('/models/{modelId}')
 def model(modelId: str):
     client = connection()
-    model = client.execute("""
+    model = unjson_model(_execute_onerow("""
         select
           attribution,
           country,
@@ -162,19 +215,19 @@ def model(modelId: str):
           version,
           type,
           sourceData,
-          date_trunc(updatedAt, 'day') as updatedAt,
+          date_trunc('day', updatedAt) as updatedAt
+          from gep.models
           where id=%(modelId)s
           order by updatedAt desc
           """,
-                            {"modelId":modelId})
+                            {"modelId":modelId}))
     return model
 
 
 @app.get('/scenarios/{sid}/features/{fid}')
 def feature(sid: str, fid: int, year:int = None):
-    client = connection()
     sid = sid.lower()
-    
+
     model = model_fromScenario(sid)
 
     timesteps = model.get('timesteps',[])
@@ -187,24 +240,22 @@ def feature(sid: str, fid: int, year:int = None):
 
     fields = [ yearFieldAs('InvestmentCost', year),
                yearFieldAs('NewCapacity', year),
-               yearField('Pop', year) +" * " + yearField('ElecStatusIn', year) + " as peopleConnected" ] 
+               yearField('Pop', year) +" * " + yearField('ElecStatusIn', year) + " as peopleConnected" ]
     where = "scenarioId=%(scenarioId)s and featureId=%(featureId)s"
     sql = """ select %s
         from scenarios
         where %s """ % (", ".join(fields), where)
-    feature = client.execute(sql, {'scenarioId':sid, 'featureId': fid})
 
-    if feature:
-        return feature[0]
+    feature = _execute_onerow(sql, {'scenarioId':sid, 'featureId': fid})
 
-    raise CustomError("Not Found")
+    return {k:str(v) for k,v in feature.items()}
 
-@app.get('/secnarios/{sid}')
+@app.get('/scenarios/{sid}')
 def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
     client = connection()
     sid = sid.lower()
     response = {'id': sid,
-                'summaryByType': {}
+                'summaryByType': collections.defaultdict(dict),
                 }
     if filters:
         for f in filters:
@@ -214,12 +265,12 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
         filters = []
 
     model = model_fromScenario(sid)
-    
+
     timesteps = model['timesteps']
     baseYear = model['baseYear']
-    intermediateYear = timesteps.get(0, None)
-    finalYear = timesteps.get(1, None)
-    
+    intermediateYear = timesteps[0]
+    finalYear = timesteps[1]
+
     if timesteps:
         if not year:
             year = timesteps[0]
@@ -232,9 +283,9 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
                                                         yearField("ElecStatusIn", y))
                                          for y in includedSteps ])
 
-    
 
-    wheres = ["scenarioId = %(scenaroiId)s"]
+
+    wheres = ["scenarioId = %(scenarioId)s"]
     vals = {'scenarioId': sid}
     for f in filters:
         filterdef = model['filters_dict'].get(f['key'], None)
@@ -259,7 +310,7 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
         _sum(yearField ('NewCapacity', year), "newCapacity"),
         ]
 
-    summary = client.execute("""select %s from scenarios where %s""" % (
+    summary = _execute_onerow("""select %s from scenarios where %s""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
     # UNDONE round to 2 digits.
@@ -282,64 +333,76 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
     #     yearFieldAs('ElecStatusIn', year, "electrificationStatus"),
     #     ]
 
-    # features = client.execute("""select %s from scenarios where %s order by featureId""" % (
+    # features = _execute("""select %s from scenarios where %s order by featureId""" % (
     #     ", ".join(fields), " and ".join(wheres)), vals )
-        
+
+    wheres.append('elecType != 99')
 
     # base year
-    fields = [_sum(yearFieldAs('PopConnected', baseYear), 'popConnectedBaseYear'),
-              yearFieldAs('ElecCode', baseYear, 'elecTypeBaseYear')
-              ]
+    fields = [#_sum(yearFieldAs('PopConnected', baseYear), 'popConnectedBaseYear'),
+        _sum(yearFieldAs('Pop', baseYear), 'popConnectedBaseYear'),
+        yearFieldAs('ElecCode', baseYear, 'elecType')
+    ]
 
-
-    baseYearSummary = client.execute("""select %s from scenarios where %s group by elecTypeBaseYear""" % (
+    summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
-    response['summaryByType'].update(baseYearSummary[0])
+
+    for row in summary:
+        if row[1]:
+            response['summaryByType']['popConnectedBaseYear'][row[1]] = row[0]
 
     # intermediate year
     fields = [_sum(yearField('Pop', intermediateYear) + ' * ' +
                    yearField('ElecStatusIn', intermediateYear), "popConnectedIntermediateYear"),
-              yearFieldAs('ElecCode', intermediateYear, 'elecTypeIntermediateYear'),
+              yearFieldAs('FinalElecCode', intermediateYear, 'elecType'),
               ]
-    
-    intermediateYearSummary = client.execute(
-        """select %s from scenarios where %s group by elecTypeIntermediateYear""" % (
+
+    summary = client.execute(
+        """select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
-    response['summaryByType'].update(intermediateYearSummary[0])
-    
+
+    for row in summary:
+        response['summaryByType']['popConnectedIntermediateYear'][row[1]] = row[0]
+
+
     #final year
     fields = [_sum(yearField('Pop', finalYear) + ' * ' +
                    yearField('ElecStatusIn', finalYear), "popConnectedFinalYear"),
-              yearFieldAs('ElecCode', finalYear, 'elecTypeFinalYear'),
+              yearFieldAs('FinalElecCode', finalYear, 'elecType'),
               ]
 
-    finalYearSummary = client.execute("""select %s from scenarios where %s group by elecTypeFinalYear""" % (
+    summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
-    response['summaryByType'].update(finalYearSummary[0])
-    
+
+    for row in summary:
+        response['summaryByType']['popConnectedFinalYear'][row[1]] = row[0]
+
     # target year
     fields = [_sum(investmentCostSelector, "investmentCost"),
               _sum(yearField('NewCapacity', year), "newCapacity"),
-              yearFieldAs('FinaleElecCode', year, 'electrificationTech'),
+              yearFieldAs('FinalElecCode', year, 'elecType'),
               ]
 
-    targetYearSummary = client.execute("""select %s from scenarios where %s group by electrificationTech""" % (
+    summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
-    
-    response['summaryByType'].update(targetYearSummary[0])
+
+    for row in summary:
+        response['summaryByType']['investmentCost'][row[2]] = row[0]
+        response['summaryByType']['newCapacity'][row[2]] = row[1]
+
 
     # featureTypes is a string of ,,,,#,#,#,,,,#,#,  where index = feature id, and # = FinalElecCode
     fields = [
         "featureId as id",
-        yearFieldAs('FinaleElecCode', year, 'tech'),
+        yearFieldAs('FinalElecCode', year, 'elecType'),
         ]
 
     features = client.execute("""select %s from scenarios where %s order by featureId asc""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
-    response['featureTypes'] = expander.expand(
-        expander.reshape(features, lambda x: (x['id'],x['tech'])),
+    response['featureTypes'] = ",".join(expander.expand(
+        expander.reshape(features, lambda x: (x[0],str(x[1]))),
         default = ''
-        )
-    
+        ))
+
     return response
