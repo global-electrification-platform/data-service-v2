@@ -11,6 +11,8 @@ import collections
 import json
 import time
 import os
+import urllib
+
 from . import expander
 
 import logging
@@ -115,7 +117,6 @@ def connection():
 def _execute(sql, params=None):
     client = connection()
     (results, cols) = client.execute(sql, params, with_column_types=True)
-    log.error(cols)
     for res in results:
         yield {col[0]:v for col, v in zip(cols,res)}
 
@@ -251,12 +252,34 @@ def feature(sid: str, fid: int, year:int = None):
     return {k:str(v) for k,v in feature.items()}
 
 @app.get('/scenarios/{sid}')
-def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
+def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterModel]=None):
     client = connection()
     sid = sid.lower()
     response = {'id': sid,
                 'summaryByType': collections.defaultdict(dict),
                 }
+
+    if not filters and 'filters' in str(request.query_params):
+        # have to parse the request for backwards compatibility
+        # querystring can look like this:
+        # ?filters%5B0%5D%5Bkey%5D=Pop&filters%5B0%5D%5Bmax%5D=83968&filters%5B1%5D%5Bkey%5D=GridCellArea&filters%5B1%5D%5Bmax%5D=32&year=2030
+        elts = [urllib.parse.unquote(f) for f in str(request.query_params).split('&') if f.startswith('filters')]
+
+        _filters = collections.defaultdict(dict)
+
+        for elt in elts:
+            # should look like filters[0][key]=Pop ,  filters[0][max]=83968
+            try:
+                key, val = elt[8:].split('=',1) # remove the filters[, split on =
+                filter_no, field = key.replace(']','').split('[',1) # remove all the ], split on the remaining [
+                _filters[filter_no][field] = val  # add to a default dict.
+            except Exception as msg:
+                raise CustomError("Couldn't parse filters")
+        try:
+            filters = [FilterModel(**kwargs) for kwargs in _filters.values()]  # convert to the filtermodel
+        except Exception as msg:
+            raise CustomError("Couldn't parse filters")
+
     if filters:
         for f in filters:
             if not any(getattr(f, att) for att in ('min', 'max', 'options')):
@@ -288,17 +311,21 @@ def scenario(sid: str, year: int = None, filters: List[FilterModel]=None):
     wheres = ["scenarioId = %(scenarioId)s"]
     vals = {'scenarioId': sid}
     for f in filters:
-        filterdef = model['filters_dict'].get(f['key'], None)
-        if filterdef.get('timestamp', None):
+        filterdef = model['filter_dict'].get(f.key, None)
+        if not filterdef:
+            raise CustomError("Invalid Filter")
+
+        key = filterdef['key']
+        if filterdef.get('timestep', None):
             key = yearField(key, year)
         if f.min is not None:
-            wheres.append( "%s >= %s" %(key, "%(key)smin") )
+            wheres.append( f"{key} >= %({key}min)s" )
             vals[key + 'min'] = f.min
         if f.max is not None:
-            wheres.append( "%s <= %s" %(key, "%(key)smax") )
+            wheres.append( f"{key} <= %({key}max)s" )
             vals[key + 'max'] = f.max
         if f.min is not None:
-            wheres.append( "%s in %s" %(key, "%(key)soptions") )
+            wheres.append( f"{key} in %({key}options)s" )
             vals[key + 'options'] = f.options
 
 
