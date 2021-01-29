@@ -424,6 +424,11 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
 
 
     # featureTypes is a string of ,,,,#,#,#,,,,#,#,  where index = feature id, and # = FinalElecCode
+    # there's one entry for each feature in the scenario
+    f_max = _execute_onerow("""select max(featureId) as max from scenarios where scenarioId=%(scenarioId)s""",
+                           vals)
+    f_max_id = f_max['max']
+
     fields = [
         "featureId as id",
         yearFieldAs('FinalElecCode', year, 'elecType'),
@@ -434,7 +439,8 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
 
     response['featureTypes'] = ",".join(expander.expand(
         expander.reshape(features, lambda x: (x[0],str(x[1]))),
-        default = ''
+        default = '',
+        max_index=f_max_id
         ))
 
     return response
