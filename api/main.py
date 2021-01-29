@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 import collections
+import decimal
 import json
 import time
 import os
@@ -344,8 +345,8 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     summary = _execute_onerow("""select %s from scenarios where %s""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
-    # UNDONE round to 2 digits.
-    response['summary'] = summary
+    eps = decimal.Decimal("0.01")
+    response['summary'] = {k:decimal.Decimal(v).quantize(eps) for k,v in summary.items()}
 
     #    original
     # fields = [
