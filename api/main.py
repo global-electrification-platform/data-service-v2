@@ -276,8 +276,14 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
             # should look like filters[0][key]=Pop ,  filters[0][max]=83968
             try:
                 key, val = elt[8:].split('=',1) # remove the filters[, split on =
-                filter_no, field = key.replace(']','').split('[',1) # remove all the ], split on the remaining [
-                _filters[filter_no][field] = val  # add to a default dict.
+                try: # options list
+                    filter_no, field, index = key.replace(']','').split('[',2) # remove all the ], split on the remaining [
+                    opt = _filters[filter_no].get(field,[])
+                    opt.append(val)
+                    _filters[filter_no][field] = opt
+                except:
+                    filter_no, field = key.replace(']','').split('[',1) # remove all the ], split on the remaining [
+                    _filters[filter_no][field] = val  # add to a default dict.
             except Exception as msg:
                 raise CustomError("Couldn't parse filters")
         try:
@@ -329,7 +335,7 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
         if f.max is not None:
             wheres.append( f"{key} <= %({key}max)s" )
             vals[key + 'max'] = f.max
-        if f.min is not None:
+        if f.options is not None:
             wheres.append( f"{key} in %({key}options)s" )
             vals[key + 'options'] = f.options
 
