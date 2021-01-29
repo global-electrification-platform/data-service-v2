@@ -372,7 +372,7 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
 
     # base year
     fields = [#_sum(yearFieldAs('PopConnected', baseYear), 'popConnectedBaseYear'),
-        _sum(yearFieldAs('Pop', baseYear), 'popConnectedBaseYear'),
+        _sum('PopConnectedBaseYear'),
         yearFieldAs('ElecCode', baseYear, 'elecType')
     ]
 
