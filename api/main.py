@@ -198,7 +198,7 @@ def country(countryId: str):
           """,
                             {"countryId":countryId})]
 
-    country['riseScores'] = riseScores.get(countryId, None)
+    country['riseScores'] = riseScores.get(countryId, {}).get('data', None)
     return country
 
 @app.get('/models/{modelId}')
