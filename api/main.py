@@ -101,6 +101,10 @@ def unjson_model(model):
             log.error(msg)
             log.error(model[field])
             raise
+
+    # trim the time from the updated at date string
+    model['updatedAt'] = str(model.get('updatedAt','')).split(' ')[0]
+
     return model
 
 #
