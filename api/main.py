@@ -346,10 +346,14 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
         _sum(yearField('Pop', finalYear), 'popFinalYear'),
         _sum(investmentCostSelector, "investmentCost"),
         _sum(yearField ('NewCapacity', year), "newCapacity"),
+        "max(featureId) as max_feature_id",
         ]
 
     summary = _execute_onerow("""select %s from scenarios where %s""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
+
+    f_max_id = summary['max_feature_id']
+    del(summary['max_feature_id'])
 
     eps = decimal.Decimal("0.01")
     response['summary'] = {k:decimal.Decimal(v).quantize(eps) for k,v in summary.items()}
@@ -431,9 +435,9 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
 
     # featureTypes is a string of ,,,,#,#,#,,,,#,#,  where index = feature id, and # = FinalElecCode
     # there's one entry for each feature in the scenario
-    f_max = _execute_onerow("""select max(featureId) as max from scenarios where scenarioId=%(scenarioId)s""",
-                           vals)
-    f_max_id = f_max['max']
+    # f_max = _execute_onerow("""select max(featureId) as max from scenarios where scenarioId=%(scenarioId)s""",
+    #                        vals)
+    # f_max_id = f_max['max']
 
     fields = [
         "featureId as id",
