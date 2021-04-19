@@ -389,6 +389,7 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
+    response['summaryByType']['popConnectedBaseYear'] = {}
     for row in summary:
         if row[1]:
             response['summaryByType']['popConnectedBaseYear'][row[1]] = row[0]
@@ -403,6 +404,7 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
         """select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
+    response['summaryByType']['popConnectedIntermediateYear'] = {}
     for row in summary:
         response['summaryByType']['popConnectedIntermediateYear'][row[1]] = row[0]
 
