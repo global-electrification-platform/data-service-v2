@@ -43,6 +43,10 @@ def dicts_equal(calc_dict, ref_dict):
         elif calc_dict[k] is None or v is None:
             assert bool(calc_dict[k]) == bool(v)
         else:
+            if k.lower().startswith('pop'):
+                # population should be an int, we're float32, original was double
+                assert float_near(calc_dict[k], v, eps="1")
+                continue
             assert float_near(calc_dict[k], v)
     return True
 
