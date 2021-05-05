@@ -78,27 +78,13 @@ def model_fromScenario(sid):
     return model
 
 def unjson_model(model):
-    # model was loaded directly from a postgresql dump
     # json fields
-    for field in ('attribution', 'map', 'sourceData'):
+    for field in ('attribution', 'map', 'sourceData', 'levers',
+                  'layers', 'filters', 'timesteps'):
         if not field in model: continue
         try:
             model[field] = json.loads(model[field])
         except json.JSONDecodeError as msg:
-            log.error(msg)
-            log.error(model[field])
-            raise
-    # json[] fields. These aren't actually valid json
-    # I'd worry about performance here, but it's just models
-    # and we do this max once per request
-    for field in('levers', 'filters', 'timesteps'):
-        if not field in model: continue
-        try:
-            arr = json.loads('[' + model[field][1:-1] + ']')
-            model[field] = [json.loads(elt) for elt in arr if isinstance(elt, str)]
-            if not model[field]:
-                model[field] = arr
-        except Exception as msg:
             log.error(msg)
             log.error(model[field])
             raise
