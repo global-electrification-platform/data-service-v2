@@ -82,6 +82,7 @@ def unjson_model(model):
     # json fields
     for field in ('attribution', 'map', 'sourceData'):
         if not field in model: continue
+        if not model[field]: continue
         try:
             model[field] = json.loads(model[field])
         except json.JSONDecodeError as msg:
@@ -93,6 +94,7 @@ def unjson_model(model):
     # and we do this max once per request
     for field in('levers', 'filters', 'timesteps'):
         if not field in model: continue
+        if not model[field]: continue
         try:
             arr = json.loads('[' + model[field][1:-1] + ']')
             model[field] = [json.loads(elt) for elt in arr if isinstance(elt, str)]
