@@ -12,5 +12,5 @@ if [ ! -d /mnt/clickhouse/data ]; then
     mount /dev/sdj /mnt/clickhouse
     mount -o bind /mnt/clickhouse/data /var/lib/clickhouse
     chown -R clickhouse:clickhouse  /var/lib/clickhouse
-    systemctl start clickhouse-server
+    systemctl restart clickhouse-server
 fi
