@@ -9,8 +9,9 @@ if [ ! -d /mnt/clickhouse ]; then
 fi
 
 if [ ! -d /mnt/clickhouse/data ]; then
+    sudo /usr/bin/clickhouse stop || true
     mount /dev/sdj /mnt/clickhouse
     mount -o bind /mnt/clickhouse/data /var/lib/clickhouse
     chown -R clickhouse:clickhouse  /var/lib/clickhouse
-    systemctl restart clickhouse-server
+    sudo /usr/bin/clickhouse restart
 fi
