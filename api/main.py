@@ -407,18 +407,22 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     for row in summary:
         response['summaryByType']['popConnectedFinalYear'][row[1]] = row[0]
 
-    # target year
-    fields = [_sum(investmentCostSelector, "investmentCost"),
-              _sum(yearField('NewCapacity', year), "newCapacity"),
-              yearFieldAs('FinalElecCode', year, 'elecType'),
-              ]
+    # For all time steps (years)
+    for _year in timesteps:
+        _investmentCost = dict()
+        _newCapacity = dict()
+        fields = [_sum(investmentCostSelector, "investmentCost"),
+                  _sum(yearField('NewCapacity', _year), "newCapacity"),
+                  yearFieldAs('FinalElecCode', _year, 'elecType'),
+                  ]
+        summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
+            ", ".join(fields), " and ".join(wheres)), vals)
 
-    summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
-        ", ".join(fields), " and ".join(wheres)), vals )
-
-    for row in summary:
-        response['summaryByType']['investmentCost'][row[2]] = row[0]
-        response['summaryByType']['newCapacity'][row[2]] = row[1]
+        for row in summary:
+            _investmentCost[row[2]] = row[0]
+            _newCapacity[row[2]] = row[1]
+        response['summaryByType']['investmentCost'][_year] = _investmentCost
+        response['summaryByType']['newCapacity'][_year] = _newCapacity
 
 
     # featureTypes is a string of ,,,,#,#,#,,,,#,#,  where index = feature id, and # = FinalElecCode
