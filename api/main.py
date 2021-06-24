@@ -305,6 +305,9 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     investmentCostSelector = "+" .join([ "(%s * %s)" % (yearField("InvestmentCost",y),
                                                         yearField("ElecStatusIn", y))
                                          for y in includedSteps ])
+    investmentCostSelectorAllYear = "+".join(["(%s * %s)" % (yearField("InvestmentCost", y),
+                                                      yearField("ElecStatusIn", y))
+                                       for y in timesteps])
 
 
 
@@ -414,7 +417,7 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     for _year in timesteps:
         _investmentCost = dict()
         _newCapacity = dict()
-        fields = [_sum(investmentCostSelector, "investmentCost"),
+        fields = [_sum(investmentCostSelectorAllYear, "investmentCost"),
                   _sum(yearField('NewCapacity', _year), "newCapacity"),
                   yearFieldAs('FinalElecCode', _year, 'elecType'),
                   ]
