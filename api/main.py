@@ -281,6 +281,9 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
         for f in filters:
             if not any(getattr(f, att) for att in ('min', 'max', 'options')):
                 raise CustomError('Filter must include a valid value parameter name: "min", "max" or "options"')
+            if f.key == 'Admin1':
+                options = [x.replace('+', ' ') for x in f.options]
+                f.options = options
     else:
         filters = []
 
