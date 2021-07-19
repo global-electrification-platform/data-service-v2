@@ -178,6 +178,7 @@ def country(countryId: str):
           version,
           type,
           sourceData,
+          externalUrl,
           date_trunc('day', updatedAt) as updatedAt
           from gep.models
           where country=%(countryId)s
@@ -207,6 +208,7 @@ def model(modelId: str):
           version,
           type,
           sourceData,
+          externalUrl,
           date_trunc('day', updatedAt) as updatedAt
           from gep.models
           where id=%(modelId)s
