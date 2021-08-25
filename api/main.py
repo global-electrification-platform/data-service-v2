@@ -307,9 +307,12 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     investmentCostSelector = "+" .join([ "(%s * %s)" % (yearField("InvestmentCost",y),
                                                         yearField("ElecStatusIn", y))
                                          for y in includedSteps ])
-    investmentCostSelectorAllYear = "+".join(["(%s * %s)" % (yearField("InvestmentCost", y),
-                                                      yearField("ElecStatusIn", y))
-                                       for y in timesteps])
+
+
+    def investmentCostSelectorYear(year):
+        return "(%s * %s)" % (yearField("InvestmentCost", year),
+                              yearField("ElecStatusIn", year))
+
 
 
 
@@ -419,10 +422,14 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     for _year in timesteps:
         _investmentCost = dict()
         _newCapacity = dict()
-        fields = [_sum(investmentCostSelectorAllYear, "investmentCost"),
+        fields = [_sum(investmentCostSelectorYear(_year), "investmentCost"),
                   _sum(yearField('NewCapacity', _year), "newCapacity"),
                   yearFieldAs('FinalElecCode', _year, 'elecType'),
                   ]
+
+        log.error("""select %s from scenarios where %s group by elecType""" % (
+            ", ".join(fields), " and ".join(wheres)))
+
         summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
             ", ".join(fields), " and ".join(wheres)), vals)
 
