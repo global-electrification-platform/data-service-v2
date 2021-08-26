@@ -303,17 +303,15 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
             raise CustomError("The parameter %(year)s is invalid for this scenario, Must be one of %(ts)s" %
                               {'year':year, 'ts': ", ".join(timesteps)})
 
-    includedSteps = [y for y in timesteps if y <=year]
-    investmentCostSelector = "+" .join([ "(%s * %s)" % (yearField("InvestmentCost",y),
-                                                        yearField("ElecStatusIn", y))
-                                         for y in includedSteps ])
-
+    def sumYear(year, timesteps, f):
+        """ return the sum of the previous years up to the current year, for a specific year function """
+        return "+".join([f(y) for y in timesteps if y <= year])
 
     def investmentCostSelectorYear(year):
         return "(%s * %s)" % (yearField("InvestmentCost", year),
                               yearField("ElecStatusIn", year))
 
-
+    investmentCostSelector = sumYear(year, timesteps, investmentCostSelectorYear)
 
 
     wheres = ["scenarioId = %(scenarioId)s"]
@@ -422,8 +420,8 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     for _year in timesteps:
         _investmentCost = dict()
         _newCapacity = dict()
-        fields = [_sum(investmentCostSelectorYear(_year), "investmentCost"),
-                  _sum(yearField('NewCapacity', _year), "newCapacity"),
+        fields = [_sum(sumYear(_year, timesteps, investmentCostSelectorYear), "investmentCost"),
+                  _sum(sumYear(_year, timesteps, lambda x: yearField('NewCapacity', x)), "newCapacity"),
                   yearFieldAs('FinalElecCode', _year, 'elecType'),
                   ]
 
