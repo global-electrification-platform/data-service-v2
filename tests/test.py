@@ -11,8 +11,9 @@ log = logging.getLogger(__name__)
 REF_BASE = 'https://gep-api.energydata.info'
 TEST_BASE = 'http://localhost:8000'
 
-SAVE_ORIGINAL=False
-DL_ORIGINAL=False
+SAVE_ORIGINAL=True
+DL_ORIGINAL=True
+SKIP_ORIGINAL=False
 
 def float_near(a, b, eps="0.001"):
     eps = decimal.Decimal(eps)
@@ -59,20 +60,23 @@ session = requests.Session()
 def test_url(url):
     log.debug("Getting %s" % url)
     start_time = time.time()
-    if DL_ORIGINAL:
-        target = session.get(REF_BASE + url)
-        target_time = time.time()
-        if SAVE_ORIGINAL:
-            with open(os.path.join("tests/originals", url.split('/')[-1]), 'wb') as f:
-                f.write(target.text.encode('utf8'))
-        target_data = target.json()
+    if not SKIP_ORIGINAL:
+        if DL_ORIGINAL:
+            target = session.get(REF_BASE + url)
+            target_time = time.time()
+            if SAVE_ORIGINAL:
+                with open(os.path.join("tests/originals", url.split('/')[-1]), 'wb') as f:
+                    f.write(target.text.encode('utf8'))
+            target_data = target.json()
+        else:
+            with open(os.path.join("tests/originals", url.split('/')[-1]), 'r') as f:
+                target_data = json.load(f)
+            target_time = time.time()
     else:
-        with open(os.path.join("tests/originals", url.split('/')[-1]), 'r') as f:
-            target_data = json.load(f)
         target_time = time.time()
-            
     local = requests.get(TEST_BASE + url)
     local_time = time.time()
     log.info("Url: %s Target Time: %4.2f, Local time: %4.2f", url, target_time- start_time, local_time- target_time)
 
-    assert dicts_equal(local.json(), target_data)
+    if not SKIP_ORIGINAL:
+        assert dicts_equal(local.json(), target_data)
