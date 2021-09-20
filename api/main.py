@@ -384,15 +384,18 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
-    response['summaryByType']['popConnectedBaseYear'] = {}
     for row in summary:
         if row[1]:
             response['summaryByType']['popConnectedBaseYear'][row[1]] = row[0]
 
     # intermediate year
+    _investmentCost = collections.defaultdict(dict)
+    _newCapacity = collections.defaultdict(dict)
     fields = [_sum(yearField('Pop', intermediateYear) + ' * ' +
                    yearField('ElecStatusIn', intermediateYear), "popConnectedIntermediateYear"),
               yearFieldAs('FinalElecCode', intermediateYear, 'elecType'),
+              _sum(sumYear(intermediateYear, timesteps, investmentCostSelectorYear), "investmentCost"),
+              _sum(sumYear(intermediateYear, timesteps, lambda x: yearField('NewCapacity', x)), "newCapacity"),
               ]
 
     summary = client.execute(
@@ -402,12 +405,16 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     response['summaryByType']['popConnectedIntermediateYear'] = {}
     for row in summary:
         response['summaryByType']['popConnectedIntermediateYear'][row[1]] = row[0]
+        _investmentCost[intermediateYear][row[1]] = row[2]
+        _newCapacity[intermediateYear][row[1]] = row[3]
 
 
     #final year
     fields = [_sum(yearField('Pop', finalYear) + ' * ' +
                    yearField('ElecStatusIn', finalYear), "popConnectedFinalYear"),
               yearFieldAs('FinalElecCode', finalYear, 'elecType'),
+              _sum(sumYear(finalYear, timesteps, investmentCostSelectorYear), "investmentCost"),
+              _sum(sumYear(finalYear, timesteps, lambda x: yearField('NewCapacity', x)), "newCapacity"),
               ]
 
     summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
@@ -415,28 +422,11 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
 
     for row in summary:
         response['summaryByType']['popConnectedFinalYear'][row[1]] = row[0]
+        _investmentCost[finalYear][row[1]] = row[2] + _investmentCost[intermediateYear].get(row[1],0)
+        _newCapacity[finalYear][row[1]] = row[3] + _newCapacity[intermediateYear].get(row[1],0)
 
-    # For all time steps (years)
-    for _year in timesteps:
-        _investmentCost = dict()
-        _newCapacity = dict()
-        fields = [_sum(sumYear(_year, timesteps, investmentCostSelectorYear), "investmentCost"),
-                  _sum(sumYear(_year, timesteps, lambda x: yearField('NewCapacity', x)), "newCapacity"),
-                  yearFieldAs('FinalElecCode', _year, 'elecType'),
-                  ]
-
-        log.error("""select %s from scenarios where %s group by elecType""" % (
-            ", ".join(fields), " and ".join(wheres)))
-
-        summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
-            ", ".join(fields), " and ".join(wheres)), vals)
-
-        for row in summary:
-            _investmentCost[row[2]] = row[0]
-            _newCapacity[row[2]] = row[1]
-        response['summaryByType']['investmentCost'][_year] = _investmentCost
-        response['summaryByType']['newCapacity'][_year] = _newCapacity
-
+    response['summaryByType']['investmentCost'] = _investmentCost
+    response['summaryByType']['newCapacity'] = _newCapacity
 
     # featureTypes is a string of ,,,,#,#,#,,,,#,#,  where index = feature id, and # = FinalElecCode
     # there's one entry for each feature in the scenario
