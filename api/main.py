@@ -394,9 +394,12 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     fields = [_sum(yearField('Pop', intermediateYear) + ' * ' +
                    yearField('ElecStatusIn', intermediateYear), "popConnectedIntermediateYear"),
               yearFieldAs('FinalElecCode', intermediateYear, 'elecType'),
-              _sum(sumYear(intermediateYear, timesteps, investmentCostSelectorYear), "investmentCost"),
-              _sum(sumYear(intermediateYear, timesteps, lambda x: yearField('NewCapacity', x)), "newCapacity"),
+              _sum(investmentCostSelectorYear(intermediateYear), "investmentCost"),
+              _sum(yearField('NewCapacity', intermediateYear), "newCapacity"),
               ]
+
+    #log.error("""select %s from scenarios where %s group by elecType""",
+    #          ", ".join(fields), " and ".join(wheres) % vals)
 
     summary = client.execute(
         """select %s from scenarios where %s group by elecType""" % (
@@ -404,23 +407,29 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
 
     response['summaryByType']['popConnectedIntermediateYear'] = {}
     for row in summary:
+        #log.error("Pop: %s, Code: %s, Invest: %d, Cap: %d", *row)
         response['summaryByType']['popConnectedIntermediateYear'][row[1]] = row[0]
         _investmentCost[intermediateYear][row[1]] = row[2]
         _newCapacity[intermediateYear][row[1]] = row[3]
+
 
 
     #final year
     fields = [_sum(yearField('Pop', finalYear) + ' * ' +
                    yearField('ElecStatusIn', finalYear), "popConnectedFinalYear"),
               yearFieldAs('FinalElecCode', finalYear, 'elecType'),
-              _sum(sumYear(finalYear, timesteps, investmentCostSelectorYear), "investmentCost"),
-              _sum(sumYear(finalYear, timesteps, lambda x: yearField('NewCapacity', x)), "newCapacity"),
+              _sum(investmentCostSelectorYear(finalYear), "investmentCost"),
+              _sum(yearField('NewCapacity', finalYear), "newCapacity"),
               ]
+
+    #log.error("""select %s from scenarios where %s group by elecType""",
+    #          ", ".join(fields), " and ".join(wheres) % vals)
 
     summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
     for row in summary:
+        #log.error("Pop: %s, Code: %s, Invest: %d, Cap: %d", *row)
         response['summaryByType']['popConnectedFinalYear'][row[1]] = row[0]
         _investmentCost[finalYear][row[1]] = row[2] + _investmentCost[intermediateYear].get(row[1],0)
         _newCapacity[finalYear][row[1]] = row[3] + _newCapacity[intermediateYear].get(row[1],0)
