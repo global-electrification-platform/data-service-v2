@@ -384,6 +384,8 @@ def scenario(sid: str,  request:Request, year: int = None, filters:List[FilterMo
     summary = client.execute("""select %s from scenarios where %s group by elecType""" % (
         ", ".join(fields), " and ".join(wheres)), vals )
 
+    # we need an empty item here if we don't have records
+    response['summaryByType']['popConnectedBaseYear'] = {}
     for row in summary:
         if row[1]:
             response['summaryByType']['popConnectedBaseYear'][row[1]] = row[0]
